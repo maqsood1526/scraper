@@ -1,0 +1,46 @@
+name: Run Lead Scraper
+
+on:
+  workflow_dispatch:
+    inputs:
+      state_abbr:
+        description: "State abbreviation, e.g. FL"
+        required: true
+        default: "FL"
+      industry:
+        description: "Industry to search, e.g. Plumbing"
+        required: true
+        default: "Plumbing"
+      cities:
+        description: "Comma-separated cities, e.g. Miami, Orlando, Tampa"
+        required: true
+        default: "Miami"
+      callback_url:
+        description: "n8n webhook URL to POST the result CSV to"
+        required: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install playwright pandas requests
+          playwright install --with-deps chromium
+
+      - name: Run scraper and notify n8n
+        env:
+          STATE_ABBR: ${{ inputs.state_abbr }}
+          INDUSTRY: ${{ inputs.industry }}
+          CITIES: ${{ inputs.cities }}
+          CALLBACK_URL: ${{ inputs.callback_url }}
+        run: python run_and_notify.py
