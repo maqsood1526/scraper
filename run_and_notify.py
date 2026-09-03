@@ -1,7 +1,8 @@
 """
 Runs inside GitHub Actions. Reads config from environment variables
 (set by the workflow_dispatch inputs), runs the Playwright scraper,
-then POSTs the resulting CSV to the n8n webhook URL.
+then POSTs both resulting CSVs (with-website + no-website) to the
+n8n webhook URL.
 """
 import os
 import asyncio
@@ -24,7 +25,7 @@ def main():
     callback_url = os.environ.get("CALLBACK_URL", "")
 
     try:
-        result_path = asyncio.run(scraper.main())
+        with_web_file = asyncio.run(scraper.main())
     except Exception as e:
         if callback_url:
             requests.post(callback_url, data={"status": "error", "reason": str(e)}, timeout=30)
@@ -33,14 +34,30 @@ def main():
     if not callback_url:
         return
 
-    if result_path and os.path.exists(result_path):
-        with open(result_path, "rb") as f:
+    # main() returns the With_Website path (or None on failure). The
+    # No_Website file sits alongside it in the same clean_data folder —
+    # derive its path the same way preprocess() names it.
+    no_web_file = None
+    if with_web_file:
+        clean_dir = os.path.dirname(with_web_file)
+        no_web_file = os.path.join(clean_dir, f"{scraper.STATE_ABBR}_{scraper.INDUSTRY}_No_Website.csv")
+
+    if with_web_file and os.path.exists(with_web_file):
+        files = {"file": (os.path.basename(with_web_file), open(with_web_file, "rb"), "text/csv")}
+        if no_web_file and os.path.exists(no_web_file):
+            files["file_no_website"] = (os.path.basename(no_web_file), open(no_web_file, "rb"), "text/csv")
+
+        try:
             requests.post(
                 callback_url,
-                files={"file": (os.path.basename(result_path), f, "text/csv")},
+                files=files,
                 data={"status": "success"},
                 timeout=120,
             )
+        finally:
+            for f in files.values():
+                try: f[1].close()
+                except: pass
     else:
         requests.post(
             callback_url,
